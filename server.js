@@ -7,31 +7,36 @@ app.use(express.json());
 app.use(express.static("public"));
 
 async function buscarCidadePorCoordenadas(latitude, longitude) {
-  // URL para previsão do tempo
-  const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature,weather_code,wind_speed_10m,relative_humidity_2m&timezone=auto`;
+  // URLs para previsão do tempo, qualidade do ar e geolocalização
+  const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature,weather_code,wind_speed_10m,relative_humidity_2m,apparent_temperature&timezone=auto`;
+
+  const airQualityUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&hourly=us_aqi,european_aqi&timezone=auto`;
+
+  const geocodeReverseUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`;
 
   try {
-    // Obtemos os dados de previsão do tempo usando as coordenadas
-    const forecastResposta = await fetch(forecastUrl);
+    // Executa todas as requisições ao mesmo tempo
+    const [forecastResposta, airQualityResposta, geocodeResposta] =
+      await Promise.all([
+        fetch(forecastUrl),
+        fetch(airQualityUrl),
+        fetch(geocodeReverseUrl, {
+          headers: {
+            "User-Agent": "ProjectClima-App/1.0",
+          },
+        }),
+      ]);
+
+    // Converte para JSON
     const forecastDados = await forecastResposta.json();
-
-    // Para geocodificação reversa, vamos usar a API Nominatim do OpenStreetMap
-    // que é especializada em geocodificação reversa
-    const geocodeReverseUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`;
-
-    const geocodeResposta = await fetch(geocodeReverseUrl, {
-      headers: {
-        // É boa prática incluir um User-Agent com informações de contato ao usar Nominatim
-        "User-Agent": "ProjectClima-App/1.0",
-      },
-    });
-
+    const airQualityDados = await airQualityResposta.json();
     const localInfo = await geocodeResposta.json();
 
-    // Retorna um objeto combinando os dados de localização e previsão
+    // Retorna tudo junto
     return {
-      localInfo: localInfo,
+      localInfo,
       previsao: forecastDados,
+      qualidadeDoAr: airQualityDados,
     };
   } catch (erro) {
     console.error("Erro ao buscar dados por coordenadas:", erro);
@@ -44,7 +49,7 @@ app.get("/api/local/:latitude/:longitude", async (req, res) => {
     const latitude = parseFloat(req.params.latitude);
     const longitude = parseFloat(req.params.longitude);
 
-    // Validação básica das coordenadas
+    // Validação das coordenadas
     if (
       isNaN(latitude) ||
       isNaN(longitude) ||
@@ -63,6 +68,7 @@ app.get("/api/local/:latitude/:longitude", async (req, res) => {
       res.status(500).json({ error: "Erro ao buscar informações do local." });
     }
   } catch (error) {
+    console.error("Erro geral:", error);
     res.status(500).json({ error: "Erro ao processar a requisição." });
   }
 });
