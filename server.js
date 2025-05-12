@@ -71,6 +71,8 @@ app.get("/api/local/:latitude/:longitude", async (req, res) => {
     console.error("Erro geral:", error);
     res.status(500).json({ error: "Erro ao processar a requisição." });
   }
+  console.log(`Requisição recebida para /api/local/${req.params.latitude}/${req.params.longitude}`);
+  console.log("funcionou");
 });
 
 app.listen(PORT, () => {
