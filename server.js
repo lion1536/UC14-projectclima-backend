@@ -27,10 +27,31 @@ async function buscarCidadePorCoordenadas(latitude, longitude) {
         }),
       ]);
 
+    // Verifica se as respostas foram bem-sucedidas
+    if (!forecastResposta.ok) {
+      console.error(`Erro na API de previsão: ${forecastResposta.status}`);
+    }
+    if (!airQualityResposta.ok) {
+      console.error(
+        `Erro na API de qualidade do ar: ${airQualityResposta.status}`
+      );
+    }
+    if (!geocodeResposta.ok) {
+      console.error(`Erro na API de geocodificação: ${geocodeResposta.status}`);
+    }
+
     // Converte para JSON
     const forecastDados = await forecastResposta.json();
     const airQualityDados = await airQualityResposta.json();
     const localInfo = await geocodeResposta.json();
+
+    // Verifica se os dados da qualidade do ar estão completos
+    if (
+      airQualityDados.hourly &&
+      (!airQualityDados.hourly.us_aqi || !airQualityDados.hourly.european_aqi)
+    ) {
+      console.error("Dados de qualidade do ar incompletos:", airQualityDados);
+    }
 
     // Retorna tudo junto
     return {
@@ -44,7 +65,7 @@ async function buscarCidadePorCoordenadas(latitude, longitude) {
   }
 }
 
-app.get("/api/local/:latitude/:longitude", async (req, res) => {
+app.get("/api/local/resumo/:latitude/:longitude", async (req, res) => {
   try {
     const latitude = parseFloat(req.params.latitude);
     const longitude = parseFloat(req.params.longitude);
@@ -61,18 +82,56 @@ app.get("/api/local/:latitude/:longitude", async (req, res) => {
       return res.status(400).json({ error: "Coordenadas inválidas." });
     }
 
-    const dados = await buscarCidadePorCoordenadas(latitude, longitude);
-    if (dados) {
-      res.json(dados);
+    const dadosCompletos = await buscarCidadePorCoordenadas(
+      latitude,
+      longitude
+    );
+    if (dadosCompletos) {
+      // Verifica se os dados necessários estão presentes
+      if (
+        !dadosCompletos.qualidadeDoAr.hourly ||
+        !dadosCompletos.qualidadeDoAr.hourly.us_aqi
+      ) {
+        console.warn("Dados de qualidade do ar ausentes ou incompletos");
+      }
+
+      // Criando um subconjunto simplificado dos dados baseado na estrutura real
+      const dadosResumidos = {
+        localInfo: {
+          display_name: dadosCompletos.localInfo.display_name,
+          address: {
+            city: dadosCompletos.localInfo.address?.city,
+            state: dadosCompletos.localInfo.address?.state,
+            country: dadosCompletos.localInfo.address?.country,
+          },
+        },
+        previsao: {
+          current: {
+            temperature: dadosCompletos.previsao.current?.temperature,
+            weather_code: dadosCompletos.previsao.current?.weather_code,
+            wind_speed_10m: dadosCompletos.previsao.current?.wind_speed_10m,
+            apparent_temperature:
+              dadosCompletos.previsao.current?.apparent_temperature,
+            relative_humidity_2m:
+              dadosCompletos.previsao.current?.relative_humidity_2m,
+          },
+        },
+      };
+
+      res.json(dadosResumidos);
     } else {
       res.status(500).json({ error: "Erro ao buscar informações do local." });
     }
   } catch (error) {
-    console.error("Erro geral:", error);
-    res.status(500).json({ error: "Erro ao processar a requisição." });
+    console.error("Erro ao gerar resumo:", error);
+    res
+      .status(500)
+      .json({ error: "Erro ao processar a requisição de resumo." });
   }
-  console.log(`Requisição recebida para /api/local/${req.params.latitude}/${req.params.longitude}`);
-  console.log("funcionou");
+  console.log(
+    `Requisição de resumo recebida para /api/local/resumo/${req.params.latitude}/${req.params.longitude}`
+  );
+  console.log("Resumo funcionou");
 });
 
 app.listen(PORT, () => {
